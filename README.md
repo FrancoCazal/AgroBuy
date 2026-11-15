@@ -65,6 +65,41 @@ zero.*
 written into [`dashboard.tsx`](frontend/src/routes/dashboard.tsx), there to show where the
 product goes.*
 
+## Architecture
+
+The buyer app calls four endpoints. Three of them run LLM agents through the platform's adapter,
+and each agent answers from code when the call fails. The orchestrator's nine steps are in the
+next section.
+
+```mermaid
+flowchart LR
+    UI["Buyer app<br/>React 19 · Vite"]
+
+    subgraph API["FastAPI · /api/v1/procurement"]
+        EX["POST /quotations/extract<br/>extractor agent<br/>fallback: regexes"]
+        UP["POST /quotations<br/>quality gate"]
+        RC["POST /requests/{id}/recommend<br/>orchestrator, 9 steps"]
+        NG["POST /quotations/{id}/negotiate<br/>negotiator agent<br/>fallback: template email"]
+    end
+
+    UI --> EX & UP & RC & NG
+
+    LLM["LLM adapter<br/>OpenAI-compatible<br/>AgroPredict AI platform"]
+    PG[("PostgreSQL")]
+    WX["Open-Meteo<br/>weather, cached 6 h"]
+    FX["open.er-api.com<br/>USD/PYG, cached 1 h"]
+    ML["Reliability model<br/>GradientBoostingClassifier"]
+    ESC["422<br/>escalation_reason"]
+
+    EX --> LLM
+    NG --> LLM
+    RC -- "comparator, recommender" --> LLM
+    UP -- "validated or quarantined" --> PG
+    RC -- "reads validated quotations,<br/>saves scores and the pick" --> PG
+    RC --> WX & FX & ML
+    RC -. "fewer than 2 validated quotations<br/>or an unknown pick" .-> ESC
+```
+
 ## How a recommendation is made
 
 ```mermaid
